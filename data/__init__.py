@@ -1,13 +1,13 @@
 import os
+import torch
 import multiprocessing as mp
+import pathlib
 from urllib.request import urlopen
+from torch.utils.data import Dataset
 
 from bs4 import BeautifulSoup
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-
-
-
 
 def get_song_urls(url) -> list:
     """
@@ -24,7 +24,7 @@ def get_song_urls(url) -> list:
     return song_urls
 
 
-def get_song_text(song_url: str) -> str:
+def get_song_text(song_url: str) -> list:
     """
     Given a song's url as input, it returns the text of the song scraped from
     the webpage.
@@ -43,55 +43,39 @@ def get_song_text(song_url: str) -> str:
                               'https://www.zucchero.it/eng/alla-fine/',
                               'https://www.zucchero.it/eng/shake/']
     try:
-        if condition1:
-            song_text = '. '.join(
-                [item.get_text().replace('\n', '. ') for item in
-                 soup.find('div', {'class': 'article-content'}).find_all("p")[
-                 1:] if '<em>' not in str(item)])
-        elif condition2:
-            song_text = '. '.join(
-                [item.get_text().replace('\n', '. ') for item in
-                 soup.find('div', {'class': 'article-content'}).find_all("p")[
-                 :-1] if '<em>' not in str(item)])
-        elif condition3:
-            song_text = ''
-        else:
-            song_text = '. '.join(
-                [item.get_text().replace('\n', '. ') for item in
-                 soup.find('div', {'class': 'article-content'}).find_all("p")
-                 if '<em>' not in str(item)])
-        return song_text
+            if condition1:
+                song_text = [item.get_text() for item in
+                     soup.find('div', {'class': 'article-content'}).find_all("p")[
+                     1:] if '<em>' not in str(item)]
+            elif condition2:
+                song_text = [item.get_text() for item in
+                     soup.find('div', {'class': 'article-content'}).find_all("p")[
+                     :-1] if '<em>' not in str(item)]
+            elif condition3:
+                song_text = ['']
+            else:
+                song_text = [item.get_text() for item in
+                     soup.find('div', {'class': 'article-content'}).find_all("p")
+                     if '<em>' not in str(item)]
+            return song_text
     except:
-        return ''
+        return ['']
 
 
-def build_dataset(songs: list, filename: str):
-    """
-    Write a .txt file where each song includes the special tokens <BOS> at the
-    beginning and <EOS> at the end.
-    """
-    f = open(f'{filename}.txt', 'w', encoding='utf-8')
-    data = ''
-    for song in songs:
-        song = str(song).strip()
-        bos_token = '<BOS>'
-        eos_token = '<EOS>'
-        data += bos_token + ' ' + song + ' ' + eos_token + '\n'
-
-    f.write(data)
-
-
-def get_sugar_lyrics(dataset_dir):
+def get_sugar_lyrics(dataset_dir: pathlib.Path):
     url = "https://www.zucchero.it/eng/lyrics/"
-    if not os.listdir(dataset_dir):
+    if (not os.listdir(dataset_dir)) | (all(s == '.ipynb_checkpoints' for s in os.listdir(dataset_dir))):
         song_urls = get_song_urls(url)
         # Step 1: Init multiprocessing.Pool()
         pool = mp.Pool(mp.cpu_count())
         # Step 2: `pool.map` the `get_song_text()`
         songs = pool.map(get_song_text, [url for url in song_urls])
+        songs = [song for songs_sublist in songs for song in songs_sublist] # Flatten
         # Step 3: Don't forget to close
         pool.close()
-        x_train, x_test = train_test_split(songs, test_size=0.1,
-                                           random_state=42)
-        build_dataset(x_train, dataset_dir / 'train')
-        build_dataset(x_test, dataset_dir / 'test')
+        # Step 4: Save the data into a .txt file
+        with open(dataset_dir / 'sugar_lyrics.txt', 'w', encoding='utf-8') as f:
+            for song in songs:
+                f.write(song)
+
+
